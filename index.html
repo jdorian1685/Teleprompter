@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="apple-mobile-web-app-title" content="Teleprompter"/>
+<title>Teleprompter</title>
+<style>
+  :root {
+    --gold: #f5c518;
+    --gold-dim: rgba(245,197,24,0.15);
+    --bg: #0a0a0a;
+    --bg2: #141414;
+    --bg3: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #f0f0f0;
+    --text-dim: #666;
+    --text-mid: #999;
+    --red: #c0392b;
+    --radius: 12px;
+    --font-ui: -apple-system, 'SF Pro Display', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-ui); }
+  .screen { position: absolute; inset: 0; overflow-y: auto; transition: opacity 0.3s, transform 0.3s; }
+  .screen.hidden { opacity: 0; pointer-events: none; transform: translateY(20px); }
+  #setup {
+    display: flex; flex-direction: column; min-height: 100%;
+    padding: env(safe-area-inset-top, 20px) 24px env(safe-area-inset-bottom, 20px);
+    padding-top: max(env(safe-area-inset-top), 32px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+  .brand-icon {
+    width: 40px; height: 40px; background: var(--gold); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .brand-icon svg { width: 22px; height: 22px; }
+  .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+  .brand-sub { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+  .field-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+  }
+  textarea {
+    width: 100%; height: 220px; padding: 14px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text);
+    font-size: 15px; font-family: var(--font-ui); line-height: 1.6;
+    resize: none; outline: none; -webkit-appearance: none;
+  }
+  textarea:focus { border-color: var(--gold); }
+  textarea::placeholder { color: var(--text-dim); }
+  .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+  .opt-group { display: flex; flex-direction: column; gap: 6px; }
+  select {
+    width: 100%; padding: 11px 12px;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); font-size: 14px;
+    font-family: var(--font-ui); outline: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    padding-right: 32px;
+  }
+  #btn-start {
+    width: 100%; padding: 17px; margin-top: 8px;
+    background: var(--gold); color: #000;
+    font-size: 17px; font-weight: 700; letter-spacing: -0.3px;
+    border: none; border-radius: var(--radius); cursor: pointer;
+    -webkit-appearance: none; transition: opacity 0.15s, transform 0.1s;
+    margin-bottom: 20px;
+  }
+  #btn-start:active { opacity: 0.85; transform: scale(0.99); }
+  .install-tip {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .install-tip .icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .install-tip p { font-size: 13px; color: var(--text-mid); line-height: 1.5; }
+  .install-tip strong { color: var(--text); }
+  #reader { display: flex; flex-direction: column; height: 100%; background: var(--bg); overflow: hidden; }
+  #scroll-wrap { flex: 1; overflow: hidden; position: relative; }
+  #tp-text {
+    padding: 28px 24px 300px;
+    font-size: 30px; line-height: 1.85;
+    transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    will-change: transform;
+  }
+  .w { display: inline; cursor: pointer; transition: color 0.15s; }
+  .w.spoken { color: #333; }
+  .w.current {
+    background: var(--gold); color: #000;
+    border-radius: 5px; padding: 1px 5px;
+    box-shadow: 0 0 20px rgba(245,197,24,0.4);
+  }
+  .w.ahead { color: var(--text); }
+  .fade-edge { position: absolute; left: 0; right: 0; height: 120px; pointer-events: none; z-index: 2; }
+  #fade-top { top: 0; background: linear-gradient(to bottom, var(--bg) 0%, transparent 100%); }
+  #fade-bot { bottom: 0; background: linear-gradient(to top, var(--bg) 0%, transparent 100%); }
+  #center-line {
+    position: absolute; top: 50%; left: 24px; right: 24px; height: 1px;
+    background: var(--gold-dim); z-index: 1; pointer-events: none; transform: translateY(-50%);
+  }
+  #ctrl-bar {
+    background: var(--bg2); border-top: 1px solid var(--border);
+    padding: 14px 16px; padding-bottom: max(14px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #status-row { display: flex; align-items: center; gap: 8px; }
+  #mic-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim); flex-shrink: 0; transition: background 0.2s;
+  }
+  #mic-dot.on { background: #e8443a; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+  #status-msg { font-size: 13px; color: var(--text-mid); flex: 1; }
+  #word-counter { font-size: 12px; color: var(--text-dim); }
+  #btn-row { display: flex; gap: 8px; }
+  .cb {
+    flex: 1; padding: 13px 8px; font-size: 14px; font-weight: 600;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg3); color: var(--text);
+    cursor: pointer; text-align: center; -webkit-appearance: none;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .cb:active { opacity: 0.7; transform: scale(0.97); }
+  #btn-listen {
+    flex: 2.5; background: var(--gold); color: #000;
+    border-color: var(--gold); font-size: 15px;
+  }
+  #btn-listen.active { background: var(--bg3); color: var(--text); border-color: #444; }
+  .cb.danger { border-color: #3a1010; background: #1a0606; color: #f08080; }
+  #size-row { display: flex; align-items: center; gap: 10px; }
+  #size-row .lbl { font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
+  input[type=range] {
+    flex: 1; -webkit-appearance: none; height: 4px;
+    background: var(--border); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px;
+    border-radius: 50%; background: var(--gold); cursor: pointer;
+  }
+  #size-val { font-size: 12px; color: var(--text-mid); min-width: 32px; text-align: right; }
+</style>
+</head>
+<body>
+<div class="screen" id="setup">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round">
+        <rect x="3" y="3" width="18" height="14" rx="2"/>
+        <path d="M8 21h8M12 17v4"/>
+        <path d="M7 7h10M7 11h6"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">Teleprompter</div>
+      <div class="brand-sub">Voice-guided scrolling</div>
+    </div>
+  </div>
+  <div class="field-label">Your talk</div>
+  <textarea id="txt" placeholder="Paste your full talk here..."></textarea>
+  <div class="options-grid">
+    <div class="opt-group">
+      <div class="field-label">Text size</div>
+      <select id="sel-size">
+        <option value="22">Small</option>
+        <option value="28" selected>Medium</option>
+        <option value="36">Large</option>
+        <option value="46">X-Large</option>
+      </select>
+    </div>
+    <div class="opt-group">
+      <div class="field-label">Scroll sensitivity</div>
+      <select id="sel-sens">
+        <option value="0.7">Slow</option>
+        <option value="1" selected>Normal</option>
+        <option value="1.4">Fast</option>
+      </select>
+    </div>
+  </div>
+  <button id="btn-start" onclick="openReader()">Open Teleprompter</button>
+  <div class="install-tip">
+    <div class="icon">📲</div>
+    <p><strong>Save for offline use:</strong> Tap the Share button in Safari, then <strong>"Add to Home Screen."</strong> The app will work without WiFi after that.</p>
+  </div>
+</div>
+<div class="screen hidden" id="reader-screen">
+  <div id="reader">
+    <div id="scroll-wrap">
+      <div class="fade-edge" id="fade-top"></div>
+      <div id="center-line"></div>
+      <div class="fade-edge" id="fade-bot"></div>
+      <div id="tp-text"></div>
+    </div>
+    <div id="ctrl-bar">
+      <div id="status-row">
+        <div id="mic-dot"></div>
+        <span id="status-msg">Tap Start Listening to begin</span>
+        <span id="word-counter"></span>
+      </div>
+      <div id="btn-row">
+        <button class="cb" onclick="adjSize(-4)">A-</button>
+        <button class="cb" id="btn-listen" onclick="toggleListen()">Start Listening</button>
+        <button class="cb" onclick="adjSize(4)">A+</button>
+        <button class="cb danger" onclick="closeReader()">Exit</button>
+      </div>
+      <div id="size-row">
+        <span class="lbl">Size</span>
+        <input type="range" id="size-range" min="16" max="60" step="2" value="28" oninput="setSize(+this.value)"/>
+        <span id="size-val">28px</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+var words=[],els=[],idx=0,rec=null,going=false,fs=28,sens=1;
+function norm(s){return s.toLowerCase().replace(/[^a-z0-9']/g,'');}
+function show(id){document.getElementById(id).classList.remove('hidden');}
+function hide(id){document.getElementById(id).classList.add('hidden');}
+function openReader(){
+  var raw=document.getElementById('txt').value.trim();
+  if(!raw){alert('Please paste your talk text first.');return;}
+  fs=+document.getElementById('sel-size').value;
+  sens=+document.getElementById('sel-sens').value;
+  words=raw.split(/\s+/).filter(function(w){return w.length>0;});
+  idx=0;
+  var t=document.getElementById('tp-text');
+  t.innerHTML='';t.style.fontSize=fs+'px';t.style.transform='translateY(0)';
+  document.getElementById('size-range').value=fs;
+  document.getElementById('size-val').textContent=fs+'px';
+  els=[];
+  words.forEach(function(w,i){
+    var s=document.createElement('span');
+    s.className='w ahead';s.textContent=w+' ';
+    s.addEventListener('click',function(){idx=i;paint(i);});
+    t.appendChild(s);els.push(s);
+  });
+  hide('setup');show('reader-screen');paint(0);updateCounter();
+}
+function paint(i){
+  els.forEach(function(el,j){
+    el.className='w '+(j<i?'spoken':j===i?'current':'ahead');
+  });
+  scrollTo(i);updateCounter();
+}
+function scrollTo(i){
+  var el=els[i];if(!el)return;
+  var wrap=document.getElementById('scroll-wrap');
+  var t=document.getElementById('tp-text');
+  var wr=wrap.getBoundingClientRect();
+  var er=el.getBoundingClientRect();
+  var target=wr.height/2;
+  var current=er.top-wr.top+er.height/2;
+  var delta=current-target;
+  var mat=new WebKitCSSMatrix(window.getComputedStyle(t).transform);
+  t.style.transform='translateY('+((mat.m42||0)-delta)+'px)';
+}
+function updateCounter(){
+  var pct=words.length?Math.round((idx/words.length)*100):0;
+  document.getElementById('word-counter').textContent=pct+'%';
+}
+function toggleListen(){going?stopListen():startListen();}
+function startListen(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Speech recognition requires Safari on iPad.');return;}
+  rec=new SR();
+  rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
+  rec.onstart=function(){
+    going=true;
+    document.getElementById('mic-dot').classList.add('on');
+    document.getElementById('status-msg').textContent='Listening - speak naturally';
+    var b=document.getElementById('btn-listen');
+    b.textContent='Pause';b.classList.add('active');
+  };
+  rec.onend=function(){if(going)rec.start();};
+  rec.onerror=function(e){
+    if(e.error==='not-allowed'){
+      alert('Microphone access denied. Go to Settings, Safari, Microphone and set to Allow.');
+      going=false;uiStopped();
+    }
+  };
+  rec.onresult=function(e){
+    var t='';
+    for(var i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;
+    match(t.trim());
+  };
+  rec.start();
+}
+function stopListen(){
+  going=false;if(rec){rec.abort();rec=null;}uiStopped();
+}
+function uiStopped(){
+  document.getElementById('mic-dot').classList.remove('on');
+  document.getElementById('status-msg').textContent='Paused - tap Start Listening to resume';
+  var b=document.getElementById('btn-listen');
+  b.textContent='Start Listening';b.classList.remove('active');
+}
+function match(transcript){
+  var spoken=transcript.toLowerCase().replace(/[^a-z0-9'\s]/g,'').split(/\s+/).filter(function(w){return w;});
+  if(!spoken.length)return;
+  var win=Math.round(12*sens);
+  var last=spoken[spoken.length-1];
+  var bi=-1,bs=0;
+  for(var i=idx;i<Math.min(idx+win*3,words.length);i++){
+    var s=fuzz(last,norm(words[i]));
+    if(s>bs&&s>0.60){bs=s;bi=i;}
+  }
+  if(bi>idx){idx=bi;paint(idx);}
+  else if(bi<0&&spoken.length>=2){
+    var prev=spoken[spoken.length-2];
+    for(var i=idx;i<Math.min(idx+win*2,words.length);i++){
+      if(fuzz(prev,norm(words[i]))>0.72){
+        if(i+1<words.length){idx=i+1;paint(idx);}break;
+      }
+    }
+  }
+}
+function fuzz(a,b){
+  if(!a||!b)return 0;if(a===b)return 1;
+  if(a.startsWith(b)||b.startsWith(a))return 0.9;
+  var l=a.length>b.length?a:b,s=a.length>b.length?b:a;
+  if(!l.length)return 1;
+  return(l.length-lev(l,s))/l.length;
+}
+function lev(a,b){
+  var dp=[];
+  for(var i=0;i<=a.length;i++){dp[i]=[i];}
+  for(var j=0;j<=b.length;j++)dp[0][j]=j;
+  for(var i=1;i<=a.length;i++)
+    for(var j=1;j<=b.length;j++)
+      dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[a.length][b.length];
+}
+function adjSize(d){setSize(fs+d);}
+function setSize(v){
+  fs=Math.max(16,Math.min(60,Math.round(v)));
+  document.getElementById('tp-text').style.fontSize=fs+'px';
+  document.getElementById('size-range').value=fs;
+  document.getElementById('size-val').textContent=fs+'px';
+  setTimeout(function(){paint(idx);},80);
+}
+function closeReader(){
+  stopListen();hide('reader-screen');show('setup');
+}
+var wakeLock=null;
+async function requestWakeLock(){
+  if('wakeLock' in navigator){
+    try{wakeLock=await navigator.wakeLock.request('screen');}catch(e){}
+  }
+}
+document.getElementById('btn-listen').addEventListener('click',requestWakeLock);
+</script>
+</body>
+</html>
