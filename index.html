@@ -301,18 +301,18 @@ function uiStopped(){
 function match(transcript){
   var spoken=transcript.toLowerCase().replace(/[^a-z0-9'\s]/g,'').split(/\s+/).filter(function(w){return w;});
   if(!spoken.length)return;
-  var win=Math.round(12*sens);
+  var win=Math.round(5*sens);
   var last=spoken[spoken.length-1];
   var bi=-1,bs=0;
   for(var i=idx;i<Math.min(idx+win*3,words.length);i++){
     var s=fuzz(last,norm(words[i]));
-    if(s>bs&&s>0.60){bs=s;bi=i;}
+    if(s>bs&&s>0.75){bs=s;bi=i;}
   }
   if(bi>idx){idx=bi;paint(idx);}
   else if(bi<0&&spoken.length>=2){
     var prev=spoken[spoken.length-2];
     for(var i=idx;i<Math.min(idx+win*2,words.length);i++){
-      if(fuzz(prev,norm(words[i]))>0.72){
+      if(fuzz(prev,norm(words[i]))>0.82){
         if(i+1<words.length){idx=i+1;paint(idx);}break;
       }
     }
